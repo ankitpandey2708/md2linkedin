@@ -9,22 +9,35 @@ LinkedIn keeps no Markdown, no tables, no code blocks — and its two surfaces d
 
 ## Requirements
 
-Node 18+.
+Node 20+.
 
-## Setup
+## Install
 
 ```
-git clone https://github.com/ankitpandey2708/md2linkedin.git
-cd md2linkedin
-npm install
+npm install -g md2linkedin        # then use the `md2li` command anywhere
+```
+
+Or run without installing:
+
+```
+npx md2linkedin file.md
 ```
 
 ## Usage
 
 ```
-node src/cli.js file.md            # feed post → clipboard (plain text)
-node src/cli.js file.md --article  # article   → clipboard (HTML + embedded images)
-node src/cli.js file.md --save      # also keep the .txt/.html file
+md2li file.md            # feed post → clipboard (plain text)
+md2li file.md --article  # article   → clipboard (HTML + embedded images)
+md2li file.md --save     # also keep the .txt/.html file
+```
+
+### From source (development)
+
+```
+git clone https://github.com/ankitpandey2708/md2linkedin.git
+cd md2linkedin
+npm install
+node src/cli.js file.md   # same flags as above
 ```
 
 The clipboard is the deliverable — just paste. Table width is auto-handled against a fixed LinkedIn-mobile budget.
