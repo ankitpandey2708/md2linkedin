@@ -6,18 +6,43 @@
   "bin": {
     "md2li": "src/cli.js"
   },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/cli.js",
     "test": "node --test"
   },
   "keywords": [
     "markdown",
+    "markdown-to-linkedin",
     "linkedin",
+    "linkedin-post",
+    "linkedin-formatter",
     "converter",
+    "formatter",
     "unicode",
+    "unicode-text",
+    "bold-text",
     "tables",
-    "code"
+    "code",
+    "syntax-highlighting",
+    "shiki",
+    "cli",
+    "nodejs"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ankitpandey2708/md2linkedin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ankitpandey2708/md2linkedin/issues"
+  },
+  "homepage": "https://github.com/ankitpandey2708/md2linkedin#readme",
+  "author": "Ankit Pandey (https://github.com/ankitpandey2708)",
   "license": "MIT",
   "dependencies": {
     "@crosscopy/clipboard": "^0.3.6",
