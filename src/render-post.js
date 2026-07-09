@@ -3,7 +3,7 @@
 
 import { matchClose } from "./parse.js";
 import { toBold, toItalic, toBoldItalic, toMonospace } from "./unicode.js";
-import { CODE, TABLE } from "./assets.js";
+import { TABLE } from "./assets.js";
 
 const BULLET = "•";
 
@@ -103,7 +103,8 @@ function renderBlocks(tokens, start, end, ctx) {
       }
       case "fence": {
         const a = t._asset;
-        if (a?.kind === CODE) blocks.push(`🖼️ image ${a.imgNo} below — ${a.altText}`);
+        // Code images and mermaid diagrams both attach to the gallery (imgNo).
+        if (a?.imgNo) blocks.push(`🖼️ image ${a.imgNo} below — ${a.altText}`);
         else blocks.push("```\n" + t.content + "```");
         i++;
         break;

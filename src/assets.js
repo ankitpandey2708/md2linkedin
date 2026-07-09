@@ -15,3 +15,4 @@
 
 export const CODE = "code";
 export const TABLE = "table";
+export const DIAGRAM = "diagram"; // ```mermaid → rendered diagram image

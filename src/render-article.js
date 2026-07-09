@@ -6,6 +6,7 @@
 
 import { matchClose } from "./parse.js";
 import { escapeMarkup as esc } from "./escape.js";
+import { DIAGRAM } from "./assets.js";
 
 function renderInline(inlineToken) {
   if (!inlineToken?.children) return esc(inlineToken?.content ?? "");
@@ -87,9 +88,15 @@ function renderBlocks(tokens, start, end) {
         break;
       }
       case "fence": {
-        // Article: code goes in a monospace <pre> block — selectable text that
-        // survives paste (LinkedIn maps it to its code block), no image upload.
-        html.push(`<pre><code>${esc(t.content.replace(/\n$/, ""))}</code></pre>`);
+        const a = t._asset;
+        if (a?.kind === DIAGRAM && a.src) {
+          // Mermaid: embed the rendered diagram image (base64) inline.
+          html.push(`<img src="${a.src}" alt="${esc(a.altText || "diagram")}" style="max-width:100%"/>`);
+        } else {
+          // Code goes in a monospace <pre> block — selectable text that survives
+          // paste (LinkedIn maps it to its code block), no image upload.
+          html.push(`<pre><code>${esc(t.content.replace(/\n$/, ""))}</code></pre>`);
+        }
         i++;
         break;
       }

@@ -22,9 +22,10 @@ import { parse, extractTable } from "./parse.js";
 import { renderPost } from "./render-post.js";
 import { renderArticle, renderArticleFragment } from "./render-article.js";
 import { renderCode, renderPlainText } from "./codeimg.js";
+import { renderMermaid } from "./mermaid.js";
 import { buildAscii, fitsWidth } from "./table.js";
 import { copyHtml, copyText } from "./clipboard.js";
-import { CODE, TABLE } from "./assets.js";
+import { CODE, TABLE, DIAGRAM } from "./assets.js";
 
 const POST_LIMIT = 3000;
 const OUT = "out";
@@ -43,12 +44,15 @@ function parseArgs(argv) {
 
 // Annotate each fence/table token with its asset.
 //
-// post:    every code block & table becomes a PNG file in out/assets (uploaded
-//          manually to the feed's bottom gallery).
-// article: code and narrow tables are text (code blocks). Wide tables become a
-//          PNG that is base64-embedded straight into the HTML — no file on disk,
-//          so a single paste carries the image inline.
-async function buildAssets(tokens, mode, counts) {
+// post:    every code block, table & diagram becomes a PNG file in out/assets
+//          (uploaded manually to the feed's bottom gallery).
+// article: code and narrow tables are text (code blocks). Wide tables and mermaid
+//          diagrams become a PNG base64-embedded straight into the HTML — no file
+//          on disk, so a single paste carries the image inline.
+//
+// Mermaid diagrams render via the Kroki service; on failure they fall back to a
+// code-image of the source.
+async function buildAssets(tokens, mode, counts, warnings) {
   let assetsMade = false;
   const assetPath = (name) => {
     if (!assetsMade) {
@@ -64,9 +68,26 @@ async function buildAssets(tokens, mode, counts) {
     const t = tokens[i];
 
     if (t.type === "fence") {
-      if (mode === "post") {
+      const lang = t.info.trim();
+      let diagram = null;
+      if (lang === "mermaid") {
+        try {
+          diagram = await renderMermaid(t.content);
+        } catch (e) {
+          warnings.push(`mermaid diagram failed to render (${e.message}) — using a code image`);
+        }
+      }
+      if (diagram && mode === "post") {
+        counts.diagram++;
+        const rel = `${ASSETS}/diagram-${String(counts.diagram).padStart(2, "0")}.png`;
+        writeFileSync(assetPath(rel), diagram);
+        t._asset = { kind: DIAGRAM, rel, altText: "Mermaid diagram", imgNo: ++imgNo };
+      } else if (diagram) {
+        counts.embedded++;
+        t._asset = { kind: DIAGRAM, altText: "Mermaid diagram", src: dataUri(diagram) };
+      } else if (mode === "post") {
         const rel = `${ASSETS}/code-${String(++counts.code).padStart(2, "0")}.png`;
-        const { png, altText } = await renderCode(t.content, t.info.trim());
+        const { png, altText } = await renderCode(t.content, lang);
         writeFileSync(assetPath(rel), png);
         t._asset = { kind: CODE, rel, altText, imgNo: ++imgNo };
       } else {
@@ -102,7 +123,7 @@ async function main() {
 
   const src = readFileSync(args.input, "utf8");
   const tokens = parse(src);
-  const counts = { code: 0, table: 0, embedded: 0 };
+  const counts = { code: 0, table: 0, diagram: 0, embedded: 0 };
   const warnings = []; // problems the user should act on
   const notes = []; // informational — expected, good outcomes
   const mode = args.article ? "article" : "post";
@@ -111,7 +132,7 @@ async function main() {
   // buildAssets writes only the *unavoidable* files: post-mode gallery PNGs,
   // which can't ride the clipboard (feed images upload manually). Article images
   // are embedded in the HTML, so it writes nothing.
-  await buildAssets(tokens, mode, counts);
+  await buildAssets(tokens, mode, counts, warnings);
   const ensureOut = () => mkdirSync(OUT, { recursive: true });
 
   // The clipboard is the primary deliverable. The text/html file is written only
@@ -123,7 +144,7 @@ async function main() {
     clip = await copyHtml(renderArticleFragment(tokens));
     if (counts.embedded) {
       notes.push(
-        `${counts.embedded} wide-table image(s) embedded inline — one paste brings everything, no manual upload`
+        `${counts.embedded} image(s) embedded inline — one paste brings everything, no manual upload`
       );
     }
     if (args.save || !clip) {
@@ -136,11 +157,11 @@ async function main() {
     clip = await copyText(post); // plain text — the feed box takes nothing richer
     const chars = Array.from(post).length;
     if (chars > POST_LIMIT) warnings.push(`post is ${chars} chars (feed limit ${POST_LIMIT})`);
-    const images = counts.code + counts.table;
-    if (images) {
+    const galleryCount = counts.code + counts.table + counts.diagram;
+    if (galleryCount) {
       warnings.push(
-        `${images} image(s) attach in a gallery at the bottom of a post, not inline — ` +
-          `use --article to place code/tables inline`
+        `${galleryCount} image(s) attach in a gallery at the bottom of a post, not inline — ` +
+          `use --article to place code/tables/diagrams inline`
       );
     }
     if (args.save || !clip) {
@@ -156,8 +177,11 @@ async function main() {
   else console.log("  clipboard copy failed — use the saved file below");
   if (savedPath) console.log(`  ${savedPath}${args.save ? "" : "  (auto-saved: clipboard failed)"}`);
   else if (!args.save) console.log("  (no file written — rerun with --save to keep one)");
-  if (counts.code || counts.table) {
-    console.log(`  ${join(OUT, ASSETS)}/  (${counts.code} code, ${counts.table} table — upload manually)`);
+  if (counts.code || counts.table || counts.diagram) {
+    console.log(
+      `  ${join(OUT, ASSETS)}/  (${counts.code} code, ${counts.table} table, ` +
+        `${counts.diagram} diagram — upload manually)`
+    );
   }
   if (notes.length) {
     console.log("notes:");
