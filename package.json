@@ -1,0 +1,53 @@
+{
+  "name": "md2linkedin",
+  "version": "0.1.0",
+  "description": "Convert Markdown to LinkedIn-ready output (feed post + article), with the hard parts solved: aligned Unicode tables and syntax-highlighted code images.",
+  "type": "module",
+  "bin": {
+    "md2li": "src/cli.js"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "markdown",
+    "markdown-to-linkedin",
+    "linkedin",
+    "linkedin-post",
+    "linkedin-formatter",
+    "converter",
+    "formatter",
+    "unicode",
+    "unicode-text",
+    "bold-text",
+    "tables",
+    "code",
+    "syntax-highlighting",
+    "shiki",
+    "cli",
+    "nodejs"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ankitpandey2708/md2linkedin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ankitpandey2708/md2linkedin/issues"
+  },
+  "homepage": "https://github.com/ankitpandey2708/md2linkedin#readme",
+  "author": "Ankit Pandey (https://github.com/ankitpandey2708)",
+  "license": "MIT",
+  "dependencies": {
+    "@crosscopy/clipboard": "^0.3.6",
+    "@resvg/resvg-js": "^2.6.2",
+    "markdown-it": "^14.1.0",
+    "shiki": "^1.24.0"
+  }
+}
