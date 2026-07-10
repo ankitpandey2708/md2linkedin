@@ -17,7 +17,7 @@
 // `out/` is wiped each run, and written to only when there's actually a file.
 
 import { rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { parse, extractTable } from "./parse.js";
 import { renderPost } from "./render-post.js";
 import { renderArticle, renderArticleFragment } from "./render-article.js";
@@ -26,15 +26,18 @@ import { renderMermaid } from "./mermaid.js";
 import { buildAscii, fitsWidth } from "./table.js";
 import { copyHtml, copyText } from "./clipboard.js";
 import { CODE, TABLE, DIAGRAM } from "./assets.js";
+import { loadTheme } from "./config.js";
+import { buildCarousel } from "./carousel.js";
 
 const POST_LIMIT = 3000;
 const OUT = "out";
 const ASSETS = "assets";
 
 function parseArgs(argv) {
-  const args = { article: false, save: false, input: null };
+  const args = { article: false, carousel: false, save: false, input: null };
   for (const a of argv) {
     if (a === "--article") args.article = true;
+    else if (a === "--carousel") args.carousel = true;
     else if (a === "--save") args.save = true;
     else if (a.startsWith("-")) console.error(`ignoring unknown option: ${a}`);
     else if (!args.input) args.input = a; // first non-flag is the input file
@@ -117,7 +120,7 @@ async function buildAssets(tokens, mode, counts, warnings) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.input) {
-    console.error("usage: md2li <input.md> [--article] [--save]");
+    console.error("usage: md2li <input.md> [--article | --carousel] [--save]");
     process.exit(1);
   }
 
@@ -126,14 +129,28 @@ async function main() {
   const counts = { code: 0, table: 0, diagram: 0, embedded: 0 };
   const warnings = []; // problems the user should act on
   const notes = []; // informational — expected, good outcomes
-  const mode = args.article ? "article" : "post";
+  const mode = args.carousel ? "carousel" : args.article ? "article" : "post";
 
   rmSync(OUT, { recursive: true, force: true }); // clear any stale output first
+  const ensureOut = () => mkdirSync(OUT, { recursive: true });
+
+  // Carousel: a PDF document post. It renders its own slide images (no clipboard,
+  // no gallery), so it bypasses buildAssets and the post/article paths entirely.
+  if (mode === "carousel") {
+    const theme = loadTheme(join(dirname(args.input), "md2linkedin.config.json"));
+    const { pdf, pages } = await buildCarousel(tokens, theme);
+    ensureOut();
+    const outPath = join(OUT, "carousel.pdf");
+    writeFileSync(outPath, pdf);
+    console.log("md2linkedin ✓  (carousel)");
+    console.log(`  ${outPath}  (${pages} slides — upload as a LinkedIn document post)`);
+    return;
+  }
+
   // buildAssets writes only the *unavoidable* files: post-mode gallery PNGs,
   // which can't ride the clipboard (feed images upload manually). Article images
   // are embedded in the HTML, so it writes nothing.
   await buildAssets(tokens, mode, counts, warnings);
-  const ensureOut = () => mkdirSync(OUT, { recursive: true });
 
   // The clipboard is the primary deliverable. The text/html file is written only
   // with --save, or automatically if the clipboard copy fails (so output is
