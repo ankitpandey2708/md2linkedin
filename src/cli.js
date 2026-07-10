@@ -16,7 +16,7 @@
 //
 // `out/` is wiped each run, and written to only when there's actually a file.
 
-import { rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { parse, extractTable } from "./parse.js";
 import { renderPost } from "./render-post.js";
@@ -28,17 +28,21 @@ import { copyHtml, copyText } from "./clipboard.js";
 import { CODE, TABLE, DIAGRAM } from "./assets.js";
 import { loadTheme } from "./config.js";
 import { buildCarousel } from "./carousel.js";
+import { fetchBrand, brandToTheme } from "./brand.js";
 
 const POST_LIMIT = 3000;
 const OUT = "out";
 const ASSETS = "assets";
 
 function parseArgs(argv) {
-  const args = { article: false, carousel: false, save: false, input: null };
-  for (const a of argv) {
+  const args = { article: false, carousel: false, save: false, brand: null, input: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
     if (a === "--article") args.article = true;
     else if (a === "--carousel") args.carousel = true;
     else if (a === "--save") args.save = true;
+    else if (a === "--brand") args.brand = argv[++i]; // next token is the domain
+    else if (a.startsWith("--brand=")) args.brand = a.slice("--brand=".length);
     else if (a.startsWith("-")) console.error(`ignoring unknown option: ${a}`);
     else if (!args.input) args.input = a; // first non-flag is the input file
   }
@@ -117,10 +121,54 @@ async function buildAssets(tokens, mode, counts, warnings) {
   }
 }
 
+// Read a secret from the environment, falling back to a local .env file.
+function envKey(name) {
+  if (process.env[name]) return process.env[name];
+  try {
+    const m = readFileSync(".env", "utf8").match(new RegExp(`^${name}=(.*)$`, "m"));
+    if (m) return m[1].trim().replace(/^["']|["']$/g, "");
+  } catch {}
+  return null;
+}
+
+// `--brand <domain>`: fetch the brand's identity (brandkit.dev) and write a starter
+// md2linkedin.config.json. It scaffolds a config to review/tweak — it does not
+// render; run --carousel afterward to use it.
+async function scaffoldBrand(input) {
+  const brandkitKey = envKey("BRANDKIT_KEY");
+  if (!brandkitKey) {
+    console.error("brand: set BRANDKIT_KEY in .env or the environment");
+    process.exit(1);
+  }
+  const domain = input.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  const url = /^https?:\/\//.test(input) ? input : "https://" + domain;
+  const theme = await brandToTheme(await fetchBrand(url, brandkitKey));
+
+  const path = "md2linkedin.config.json";
+  const existed = existsSync(path);
+  writeFileSync(path, JSON.stringify(theme, null, 2) + "\n", "utf8");
+
+  console.log("md2linkedin ✓  (brand → config)");
+  console.log(`  ${path}${existed ? "  (overwrote existing)" : ""}  ← ${domain}`);
+  const c = theme.color || {}, id = theme.identity || {}, f = theme.font || {};
+  for (const [k, v] of Object.entries({ background: c.background, foreground: c.foreground, accent: c.accent, handle: id.handle })) {
+    if (v) console.log(`    ${k.padEnd(11)}${v}`);
+  }
+  if (f.heading) console.log(`    ${"font".padEnd(11)}${f.heading.slice(0, 60)}…`);
+  if (id.logo) console.log(`    ${"logo".padEnd(11)}${id.logo.slice(0, 60)}…`);
+  console.log("  review/tweak the file; anything omitted uses defaults. then: md2li <file> --carousel");
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  if (args.brand) {
+    await scaffoldBrand(args.brand);
+    return;
+  }
+
   if (!args.input) {
-    console.error("usage: md2li <input.md> [--article | --carousel] [--save]");
+    console.error("usage: md2li <input.md> [--article | --carousel] [--save]  |  md2li --brand <domain>");
     process.exit(1);
   }
 

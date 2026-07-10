@@ -1,7 +1,7 @@
 {
   "name": "md2linkedin",
-  "version": "0.3.0",
-  "description": "Convert Markdown to LinkedIn-ready output (feed post + article), with the hard parts solved: aligned Unicode tables and syntax-highlighted code images.",
+  "version": "0.4.0",
+  "description": "Convert Markdown to LinkedIn-ready output — feed post, article, or themeable carousel (PDF) — with the hard parts solved: aligned tables, syntax-highlighted code, and rendered mermaid diagrams.",
   "type": "module",
   "bin": {
     "md2li": "src/cli.js"
@@ -31,6 +31,11 @@
     "code",
     "syntax-highlighting",
     "shiki",
+    "carousel",
+    "document-post",
+    "pdf",
+    "mermaid",
+    "diagrams",
     "cli",
     "nodejs"
   ],

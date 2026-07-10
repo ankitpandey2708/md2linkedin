@@ -73,6 +73,23 @@ Drop a **`md2linkedin.config.json` next to your `.md` file** to override the def
 
 Four axes: **color** (background / foreground / accent / muted), **font** (heading & body TTF URLs), **identity** (handle, circular logo, `placement` = `top`\|`bottom`), **layout** (`ratio` = `4:5`\|`1:1`\|`9:16`, margins, pageNumber). Only the carousel uses the theme.
 
+### Auto-theme from a brand (`--brand`)
+
+Generate a starter config from a company's website instead of hand-writing one:
+
+```
+md2li --brand realfast.ai      # writes md2linkedin.config.json
+```
+
+It reads the brand's identity via [brandkit.dev](https://brandkit.dev) (set `BRANDKIT_KEY` in `.env` or the environment) and maps:
+
+- **colors** → `background` / `foreground` / `accent` (semantic roles + detected light/dark scheme)
+- **font** → the detected family, resolved to real Google-Fonts TTFs (bold heading + regular body)
+- **logo** → the brand's square icon
+- **handle** → derived from the domain (`realfast.ai` → `@realfast`)
+
+Anything it can't determine is omitted, so it falls back to defaults. It **writes a config to review/tweak** — it doesn't render. Then run `--carousel`.
+
 ## Output
 
 No file by default (post/article). `--save` keeps a copy in `out/`. Auto-saved if a clipboard copy fails. `out/` is wiped each run.
@@ -102,7 +119,7 @@ input.md → markdown-it tokens
   carousel→ carousel.js       → PDF (pdfkit): selectable text + embedded images
 ```
 
-Modules: `parse`, `unicode`, `table` (`buildAscii` + width), `codeimg` (Shiki + resvg), `mermaid` (Kroki), `carousel` (pdfkit), `config`, `fonts`, `assets`, `render-post`, `render-article`, `escape`, `clipboard`, `cli`.
+Modules: `parse`, `unicode`, `table` (`buildAscii` + width), `codeimg` (Shiki + resvg), `mermaid` (Kroki), `carousel` (pdfkit), `config`, `fonts`, `brand` (brandkit), `assets`, `render-post`, `render-article`, `escape`, `clipboard`, `cli`.
 
 ## License
 
