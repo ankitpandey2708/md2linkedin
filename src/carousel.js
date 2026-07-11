@@ -11,7 +11,7 @@
 // the visuals are images.
 
 import PDFDocument from "pdfkit";
-import { inlineText } from "./parse.js";
+import { inlineText, extractTable } from "./parse.js";
 import { renderCode, renderPlainText } from "./codeimg.js";
 import { renderMermaid } from "./mermaid.js";
 import { buildAscii } from "./table.js";
@@ -75,16 +75,8 @@ async function pageContent(tokens) {
       }
       blocks.push({ type: "image", png });
     } else if (t.type === "table_open") {
-      const rows = [];
-      let row = null, depth = 0;
-      for (; i < tokens.length; i++) {
-        const x = tokens[i];
-        if (x.type === "table_open") depth++;
-        else if (x.type === "table_close") { if (--depth === 0) break; }
-        else if (x.type === "tr_open") row = [];
-        else if (x.type === "tr_close") { if (row) rows.push(row); row = null; }
-        else if (x.type === "inline" && row) row.push(inlineText(x).trim());
-      }
+      const { rows, endIdx } = extractTable(tokens, i);
+      i = endIdx;
       blocks.push({ type: "image", png: renderPlainText(buildAscii(rows, { hasHeader: true })) });
     }
   }

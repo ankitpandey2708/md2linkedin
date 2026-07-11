@@ -1,8 +1,7 @@
 // Renders the token stream to LinkedIn-safe HTML for the *article* editor, which
 // keeps native prose (h1/h2, strong, em, ul/ol, blockquote, a) and monospace
 // code blocks on paste. Code and narrow tables become code blocks (selectable,
-// aligned); wide tables would wrap in a code block, so they become inline images
-// (articles, unlike posts, place images inline).
+// aligned); wide tables would wrap in a code block, so they become inline images.
 
 import { matchClose } from "./parse.js";
 import { escapeMarkup as esc } from "./escape.js";
@@ -108,8 +107,7 @@ function renderBlocks(tokens, start, end) {
         const close = matchClose(tokens, i);
         const a = t._asset;
         // LinkedIn strips <table> on paste (cells collapse into run-on text), so
-        // tables use the same survivable forms as the post: Unicode text, or an
-        // image when too wide.
+        // tables use survivable forms instead.
         // Narrow table → monospace <pre> (LinkedIn's code block; aligned,
         // selectable). Wide table would wrap and break the grid, so it becomes a
         // PNG base64-embedded in the HTML — LinkedIn keeps it on paste (verified),

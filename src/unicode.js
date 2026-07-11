@@ -1,59 +1,36 @@
-// Maps ASCII letters/digits to Unicode "Mathematical Alphanumeric" variants.
-// LinkedIn renders plain text only in feed posts, so these Unicode code points
-// are how we fake bold / italic / monospace. Characters without a variant
-// (punctuation, symbols) pass through unchanged.
+// Text-width measurement, shared by the ASCII-table builder (column alignment)
+// and the code-image renderer (canvas sizing). Both iterate by Unicode code
+// point, so astral characters (emoji, etc.) are never double-counted the way
+// `.length` counts their UTF-16 surrogate pairs.
 
-const A = 0x41; // 'A'
-const Z = 0x5a; // 'Z'
-const a = 0x61; // 'a'
-const z = 0x7a; // 'z'
-const zero = 0x30; // '0'
-const nine = 0x39; // '9'
-
-// Base code points for each style's 'A', 'a', and '0'.
-const STYLES = {
-  bold: { upper: 0x1d400, lower: 0x1d41a, digit: 0x1d7ce },
-  italic: { upper: 0x1d434, lower: 0x1d44e, digit: null }, // no italic digits
-  boldItalic: { upper: 0x1d468, lower: 0x1d482, digit: null },
-  monospace: { upper: 0x1d670, lower: 0x1d68a, digit: 0x1d7f6 },
-};
-
-// A few code points in the math ranges are "holes" (reserved) and live
-// elsewhere in Unicode. Italic 'h' is the best-known case.
-const HOLES = {
-  italic: { h: 0x210e }, // PLANCK CONSTANT
-};
-
-function mapChar(ch, styleName) {
-  const style = STYLES[styleName];
-  const code = ch.codePointAt(0);
-
-  if (HOLES[styleName] && HOLES[styleName][ch] !== undefined) {
-    return String.fromCodePoint(HOLES[styleName][ch]);
-  }
-  if (code >= A && code <= Z) {
-    return String.fromCodePoint(style.upper + (code - A));
-  }
-  if (code >= a && code <= z) {
-    return String.fromCodePoint(style.lower + (code - a));
-  }
-  if (code >= zero && code <= nine && style.digit !== null) {
-    return String.fromCodePoint(style.digit + (code - zero));
-  }
-  return ch; // passthrough
+// Double-width (CJK, fullwidth, most emoji) glyphs occupy two monospace columns.
+function isWide(cp) {
+  return (
+    cp === 0x3000 ||
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe4f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f000 && cp <= 0x1faff) ||
+    (cp >= 0x2600 && cp <= 0x27bf)
+  );
 }
 
-function mapString(str, styleName) {
-  let out = "";
-  for (const ch of str) out += mapChar(ch, styleName);
-  return out;
+// Display columns a string occupies in a monospace context: each code point is
+// one column, except wide glyphs (above), which are two. This is the measure
+// that keeps monospace tables and code images aligned across scripts.
+export function displayWidth(str) {
+  let w = 0;
+  for (const ch of str) w += isWide(ch.codePointAt(0)) ? 2 : 1;
+  return w;
 }
 
-export const toBold = (s) => mapString(s, "bold");
-export const toItalic = (s) => mapString(s, "italic");
-export const toBoldItalic = (s) => mapString(s, "boldItalic");
-export const toMonospace = (s) => mapString(s, "monospace");
-
-// Count display columns by Unicode code points, not UTF-16 units. The math
-// glyphs are astral (surrogate pairs), so `.length` double-counts them.
-export const codePointLength = (str) => Array.from(str).length;
+// Pad `str` with trailing spaces to `w` display columns (no-op if already ≥ w).
+// Unlike String.padEnd, which counts UTF-16 units, this pads to display width so
+// cells holding wide glyphs still line up.
+export function padToWidth(str, w) {
+  return str + " ".repeat(Math.max(0, w - displayWidth(str)));
+}

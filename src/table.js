@@ -1,9 +1,8 @@
 // Tables render as a plain-ASCII box table. In a monospace context (an image, or
-// LinkedIn's article code block) the columns align perfectly. LinkedIn's feed
-// has no monospace surface, so there tables become images. Wider than the code
-// block wraps and breaks alignment, so wide tables become images too.
+// LinkedIn's article code block) the columns align perfectly. A table wider than
+// the code block wraps and breaks alignment, so wide tables become images too.
 
-import { codePointLength } from "./unicode.js";
+import { displayWidth, padToWidth } from "./unicode.js";
 
 // Max monospace columns that fit LinkedIn's article code block on a phone before
 // a line wraps (which breaks a table's alignment). Empirical, target-dependent
@@ -11,7 +10,7 @@ import { codePointLength } from "./unicode.js";
 export const WIDTH_BUDGET = 32;
 
 export function measureWidth(str) {
-  return Math.max(...str.split("\n").map((l) => codePointLength(l)));
+  return Math.max(...str.split("\n").map((l) => displayWidth(l)));
 }
 
 // A table is "narrow" (safe as a code block) if no line exceeds the budget.
@@ -23,7 +22,7 @@ function columnWidths(rows) {
   const n = Math.max(...rows.map((r) => r.length));
   const widths = new Array(n).fill(0);
   for (const row of rows) {
-    for (let i = 0; i < n; i++) widths[i] = Math.max(widths[i], codePointLength(row[i] ?? ""));
+    for (let i = 0; i < n; i++) widths[i] = Math.max(widths[i], displayWidth(row[i] ?? ""));
   }
   return widths;
 }
@@ -33,7 +32,7 @@ export function buildAscii(rows, { hasHeader = true } = {}) {
   const widths = columnWidths(rows);
   const border = (l, m, r) => l + widths.map((w) => "─".repeat(w + 2)).join(m) + r;
   const dataRow = (cells) =>
-    "│" + widths.map((w, i) => " " + (cells[i] ?? "").padEnd(w, " ") + " ").join("│") + "│";
+    "│" + widths.map((w, i) => " " + padToWidth(cells[i] ?? "", w) + " ").join("│") + "│";
 
   const lines = [border("┌", "┬", "┐")];
   rows.forEach((row, i) => {

@@ -1,11 +1,12 @@
 // Renders text (code or a gated table) to a PNG. Code goes through Shiki for
 // syntax highlighting; tables render as plain monospace. Images never wrap and
-// look identical on desktop and mobile — the reason code always becomes an
-// image rather than fragile Unicode text.
+// look identical on desktop and mobile. Used for article wide-table embeds and
+// for carousel (PDF) slide code/table images.
 
 import { Resvg } from "@resvg/resvg-js";
 import { codeToTokens } from "shiki";
 import { escapeMarkup } from "./escape.js";
+import { displayWidth } from "./unicode.js";
 
 const FONT_SIZE = 32;
 const LINE_HEIGHT = Math.round(FONT_SIZE * 1.5);
@@ -17,29 +18,9 @@ const FG = "#1f2328";
 const FONT = "Consolas, 'DejaVu Sans Mono', monospace";
 const ZOOM = 2; // retina
 
-// Double-width (CJK, fullwidth, most emoji) occupy two monospace columns. Sizing
-// the canvas by code-point count alone would undercount these and clip the right
-// edge, so we measure display columns instead.
-function isWide(cp) {
-  return (
-    cp === 0x3000 ||
-    (cp >= 0x1100 && cp <= 0x115f) ||
-    (cp >= 0x2e80 && cp <= 0xa4cf) ||
-    (cp >= 0xac00 && cp <= 0xd7a3) ||
-    (cp >= 0xf900 && cp <= 0xfaff) ||
-    (cp >= 0xfe30 && cp <= 0xfe4f) ||
-    (cp >= 0xff00 && cp <= 0xff60) ||
-    (cp >= 0xffe0 && cp <= 0xffe6) ||
-    (cp >= 0x1f000 && cp <= 0x1faff) ||
-    (cp >= 0x2600 && cp <= 0x27bf)
-  );
-}
-function displayWidth(str) {
-  let w = 0;
-  for (const ch of str) w += isWide(ch.codePointAt(0)) ? 2 : 1;
-  return w;
-}
-
+// Sizing the canvas by code-point count alone would undercount wide glyphs
+// (CJK, fullwidth, most emoji) and clip the right edge, so we measure display
+// columns (see unicode.js) instead.
 // lines: Array<Array<{ content, color }>>
 function svgFromLines(lines) {
   const maxCols = Math.max(
@@ -68,8 +49,8 @@ ${textEls}
 </svg>`;
 }
 
-// Returns the rendered PNG as a Buffer; callers write it to disk (post gallery)
-// or base64-embed it in HTML (article) as they need.
+// Returns the rendered PNG as a Buffer; callers base64-embed it in the article
+// HTML or place it on a carousel slide as they need.
 function svgToPng(svg, zoom = ZOOM) {
   const resvg = new Resvg(svg, {
     fitTo: { mode: "zoom", value: zoom },

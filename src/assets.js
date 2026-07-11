@@ -1,17 +1,15 @@
 // Shared vocabulary for rendered block assets (code fences, tables).
 //
-// One asset per code block / table, built once in cli.js and read by both
-// renderers. The per-surface rendering follows from evidence about what
-// actually survives on LinkedIn:
+// One asset per code block / table, built once in cli.js and read by the
+// article renderer. The rendering follows from evidence about what actually
+// survives on LinkedIn's article editor (which keeps a monospace code block):
 //
-//                     post (feed, no code block)   article (has code block)
-//   CODE              image                        code block (selectable)
-//   TABLE (narrow)    image                        code block (aligned ASCII)
-//   TABLE (wide)      image                        image
+//   CODE              code block (selectable)
+//   TABLE (narrow)    code block (aligned ASCII)
+//   TABLE (wide)      image (base64-embedded inline)
 //
 // (A "narrow" table is one whose ASCII width fits WIDTH_BUDGET; wider tables
-//  wrap inside LinkedIn's code block and lose alignment, so they become images.
-//  The feed has no monospace surface at all, so post tables are always images.)
+//  wrap inside LinkedIn's code block and lose alignment, so they become images.)
 
 export const CODE = "code";
 export const TABLE = "table";
