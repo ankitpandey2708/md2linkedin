@@ -12,16 +12,29 @@
 // would be bundling a headless browser, which this tool deliberately avoids.
 
 const KROKI_URL = "https://kroki.io/mermaid/png";
+// Render flowcharts with extra margin around the diagram. LinkedIn intermittently
+// shaves a few pixels off the top of a flush diagram on the *first* paste; the
+// built-in margin means that lands on whitespace, not the boxes' top border.
+// This is mermaid's own render config (default is 8), not a post-hoc image edit.
+const DIAGRAM_PADDING = 24;
 
 export async function renderMermaid(source) {
   const res = await fetch(KROKI_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
-    body: source,
+    body: withPadding(source),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(`Kroki HTTP ${res.status}${detail ? `: ${detail.slice(0, 120)}` : ""}`);
   }
   return Buffer.from(await res.arrayBuffer());
+}
+
+// Prepend a mermaid init directive requesting flowchart padding — unless the
+// source already carries its own init config, in which case we respect the
+// author's settings and change nothing.
+function withPadding(source) {
+  if (/%%\{\s*init\s*:/i.test(source)) return source;
+  return `%%{init: {'flowchart': {'diagramPadding': ${DIAGRAM_PADDING}}}}%%\n${source}`;
 }

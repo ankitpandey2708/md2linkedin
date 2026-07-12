@@ -13,7 +13,7 @@ Every stage ran one after another. The headline numbers:
 | Old | 25m  |
 | New | 5m   |
 
-![Deploy time before and after the change](https://placehold.co/960x320.png)
+![Deploy time chart (fresh random image each build)](https://picsum.photos/1000/400)
 
 ## The old pipeline
 

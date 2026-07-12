@@ -20,7 +20,7 @@ import { renderArticle, renderArticleFragment } from "./render-article.js";
 import { renderPlainText, renderCode } from "./codeimg.js";
 import { renderMermaid } from "./mermaid.js";
 import { renderMath } from "./mathimg.js";
-import { resolveImage, toDataUri } from "./image.js";
+import { resolveImage, toDataUri, imageSize } from "./image.js";
 import { buildAscii, fitsWidth } from "./table.js";
 import { copyHtml } from "./clipboard.js";
 import { openUrl } from "./open.js";
@@ -72,7 +72,7 @@ async function buildAssets(tokens, counts, warnings, baseDir) {
       }
       if (diagram) {
         counts.embedded++;
-        t._asset = { kind: DIAGRAM, altText: "Mermaid diagram", src: dataUri(diagram) };
+        t._asset = { kind: DIAGRAM, altText: "Mermaid diagram", src: dataUri(diagram), ...(imageSize(diagram) || {}) };
       } else {
         t._asset = { kind: CODE }; // code block, no image
       }
@@ -85,7 +85,8 @@ async function buildAssets(tokens, counts, warnings, baseDir) {
       if (!fits) {
         // Wide table: embed the PNG in the HTML (survives paste, no upload).
         counts.embedded++;
-        t._asset = { kind: TABLE, ascii, fits: false, src: dataUri(renderPlainText(ascii)) };
+        const png = renderPlainText(ascii);
+        t._asset = { kind: TABLE, ascii, fits: false, src: dataUri(png), ...(imageSize(png) || {}) };
       } else {
         t._asset = { kind: TABLE, ascii, fits: true }; // narrow: code block
       }
@@ -98,18 +99,21 @@ async function buildAssets(tokens, counts, warnings, baseDir) {
         if (c.type === "image") {
           const src = c.attrGet("src");
           try {
-            c._asset = { kind: IMAGE, altText: c.content || "image", src: toDataUri(await resolveImage(src, baseDir)) };
+            const buf = await resolveImage(src, baseDir);
+            c._asset = { kind: IMAGE, altText: c.content || "image", src: toDataUri(buf), ...(imageSize(buf) || {}) };
             counts.embedded++;
           } catch (e) {
             warnings.push(`image failed to load (${src}: ${e.message}) — showing alt text`);
           }
         } else if (c.type === "math_inline") {
+          let png;
           try {
-            c._asset = { kind: MATH, src: dataUri(await renderMath(c.content)) };
+            png = await renderMath(c.content);
           } catch (e) {
             warnings.push(`math failed to render (${e.message}) — showing a code image`);
-            c._asset = { kind: MATH, src: dataUri((await renderCode(c.content, "latex")).png) };
+            png = (await renderCode(c.content, "latex")).png;
           }
+          c._asset = { kind: MATH, src: dataUri(png), ...(imageSize(png) || {}) };
           counts.embedded++;
         }
       }

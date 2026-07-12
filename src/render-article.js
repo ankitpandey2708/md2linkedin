@@ -20,11 +20,20 @@ const ALERT_LABELS = {
   CAUTION: "🔴 CAUTION",
 };
 
+// Build an <img> from an asset. When the pixel size is known we stamp
+// width/height (+ height:auto so max-width:100% still scales it): a dimensioned
+// image survives LinkedIn's first paste, where a zero-measured one gets dropped
+// before its data-URI finishes decoding.
+const imgTag = (a, alt) =>
+  `<img src="${a.src}" alt="${esc(alt ?? a.altText ?? "")}"` +
+  (a.w && a.h ? ` width="${a.w}" height="${a.h}"` : "") +
+  ` style="max-width:100%;height:auto"/>`;
+
 // LinkedIn keeps an <img> only when it is alone in its own <p>; an image that
 // shares a paragraph with text or another image is dropped on paste. So each
 // image/math breaks out of the current paragraph into its own <p><img></p>.
 // (Empty paragraphs from the split are stripped by the paragraph handler.)
-const imgBlock = (src, alt) => `</p><p><img src="${src}" alt="${esc(alt || "")}" style="max-width:100%"/></p><p>`;
+const imgBlock = (a, alt) => `</p><p>${imgTag(a, alt)}</p><p>`;
 
 function renderInline(inlineToken) {
   if (!inlineToken?.children) return esc(inlineToken?.content ?? "");
@@ -62,11 +71,11 @@ function renderInline(inlineToken) {
         out += "<br/>";
         break;
       case "image":
-        if (c._asset?.src) out += imgBlock(c._asset.src, c._asset.altText);
+        if (c._asset?.src) out += imgBlock(c._asset);
         else out += esc(c.content || ""); // load failed → fall back to alt text
         break;
       case "math_inline":
-        if (c._asset?.src) out += imgBlock(c._asset.src, c.content);
+        if (c._asset?.src) out += imgBlock(c._asset, c.content);
         else out += `<code>${esc(c.content)}</code>`;
         break;
       case "footnote_ref":
@@ -127,7 +136,7 @@ function renderBlocks(tokens, start, end) {
         const a = t._asset;
         if (a?.kind === DIAGRAM && a.src) {
           // Mermaid: embed the rendered diagram image (base64) inline.
-          html.push(`<img src="${a.src}" alt="${esc(a.altText || "diagram")}" style="max-width:100%"/>`);
+          html.push(imgTag(a, a.altText || "diagram"));
         } else {
           // Code goes in a monospace <pre> block — selectable text that survives
           // paste (LinkedIn maps it to its code block), no image upload.
@@ -152,7 +161,7 @@ function renderBlocks(tokens, start, end) {
         if (a?.fits) {
           html.push(`<pre><code>${esc(a.ascii)}</code></pre>`);
         } else {
-          html.push(`<img src="${a.src}" alt="table" style="max-width:100%"/>`);
+          html.push(imgTag(a, "table"));
         }
         i = close + 1;
         break;
