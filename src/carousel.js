@@ -11,9 +11,11 @@
 // the visuals are images.
 
 import PDFDocument from "pdfkit";
-import { inlineText, extractTable } from "./parse.js";
+import { inlineText, extractTable, matchClose } from "./parse.js";
 import { renderCode, renderPlainText } from "./codeimg.js";
 import { renderMermaid } from "./mermaid.js";
+import { renderMath } from "./mathimg.js";
+import { resolveImage } from "./image.js";
 import { buildAscii } from "./table.js";
 import { loadFonts } from "./fonts.js";
 import { pageSize } from "./config.js";
@@ -40,30 +42,83 @@ export function splitPages(tokens) {
   return pages;
 }
 
+// Pull markdown-it-footnote definitions out of the stream into an id→text map,
+// and return the tokens with the definition block removed (so it doesn't become
+// a stray slide). Carousel footnotes are inlined at their reference in parens.
+function extractFootnotes(tokens) {
+  const map = {};
+  const start = tokens.findIndex((t) => t.type === "footnote_block_open");
+  if (start === -1) return { map, tokens };
+  const end = matchClose(tokens, start);
+  for (let i = start + 1; i < end; i++) {
+    if (tokens[i].type === "footnote_open") {
+      const fc = matchClose(tokens, i);
+      let text = "";
+      for (let j = i + 1; j < fc; j++) if (tokens[j].type === "inline") text += inlineText(tokens[j]);
+      map[tokens[i].meta?.id ?? 0] = text.trim();
+      i = fc;
+    }
+  }
+  return { map, tokens: tokens.slice(0, start).concat(tokens.slice(end + 1)) };
+}
+
 // ── page tokens → a simple content model ────────────────────────────────────
-async function pageContent(tokens) {
+async function pageContent(tokens, baseDir, footnotes) {
+  const opts = { footnotes };
   let heading = null;
   const blocks = [];
+  // Inline images / math inside a paragraph are promoted to their own image
+  // block (a carousel slide is visual; inline placement in PDF prose is not).
+  const promoteInline = async (inline) => {
+    for (const c of inline.children || []) {
+      if (c.type === "image") {
+        try { blocks.push({ type: "image", png: await resolveImage(c.attrGet("src"), baseDir) }); } catch {}
+      } else if (c.type === "math_inline") {
+        try { blocks.push({ type: "image", png: await renderMath(c.content) }); }
+        catch { blocks.push({ type: "image", png: (await renderCode(c.content, "latex")).png }); }
+      }
+    }
+  };
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (t.type === "heading_open") {
-      heading = inlineText(tokens[i + 1]);
+      heading = inlineText(tokens[i + 1], opts);
       i += 2;
     } else if (t.type === "paragraph_open") {
-      blocks.push({ type: "para", text: inlineText(tokens[i + 1]) });
+      const text = inlineText(tokens[i + 1], opts);
+      if (text.trim()) blocks.push({ type: "para", text });
+      await promoteInline(tokens[i + 1]);
       i += 2;
     } else if (t.type === "bullet_list_open" || t.type === "ordered_list_open") {
       const closeType = t.type.replace("_open", "_close");
       const ordered = t.type === "ordered_list_open";
       const items = [];
+      let task = false;
       let depth = 0;
       for (; i < tokens.length; i++) {
         const x = tokens[i];
         if (x.type === t.type) depth++;
         else if (x.type === closeType) { if (--depth === 0) break; }
-        else if (x.type === "inline") items.push(inlineText(x));
+        else if (x.type === "inline") {
+          let raw = inlineText(x, opts);
+          const m = raw.match(/^\[( |x|X)\]\s+/); // GFM task marker
+          if (m) { task = true; raw = (m[1] === " " ? "☐ " : "☑ ") + raw.slice(m[0].length); }
+          items.push(raw);
+        }
       }
-      blocks.push({ type: "list", ordered, items });
+      blocks.push({ type: "list", ordered, task, items });
+    } else if (t.type === "blockquote_open") {
+      const close = matchClose(tokens, i);
+      let text = "";
+      for (let j = i + 1; j < close; j++) {
+        if (tokens[j].type === "inline") text += (text ? " " : "") + inlineText(tokens[j], opts);
+      }
+      // GitHub alert: first line [!TYPE]. Plain uppercase label (PDF font has no emoji).
+      let label = null;
+      const am = text.match(/^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i);
+      if (am) { label = am[1].toUpperCase(); text = text.slice(am[0].length); }
+      blocks.push({ type: "quote", label, text });
+      i = close;
     } else if (t.type === "fence") {
       const lang = t.info.trim();
       let png;
@@ -84,7 +139,6 @@ async function pageContent(tokens) {
 }
 
 // ── pdfkit drawing helpers ──────────────────────────────────────────────────
-const pngSize = (buf) => ({ w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) });
 
 // Fetch a logo image; returns a PNG/JPEG Buffer pdfkit can embed, or throws.
 async function fetchLogo(url) {
@@ -126,11 +180,14 @@ function drawIdentity(doc, theme, W, H, n, total, color, logo) {
 }
 
 // Draw an image block centered within the content width; returns the y below it.
-function drawImage(doc, png, x, y, cw, maxH) {
-  const { w, h } = pngSize(png);
+// openImage reads real dimensions for PNG *and* JPEG (authored images may be
+// either), unlike a PNG-header-only size read.
+function drawImage(doc, buf, x, y, cw, maxH) {
+  const img = doc.openImage(buf);
+  const w = img.width, h = img.height;
   let dw = cw, dh = (h / w) * cw;
   if (dh > maxH) { dh = maxH; dw = (w / h) * maxH; }
-  doc.image(png, x + (cw - dw) / 2, y, { width: dw, height: dh });
+  doc.image(img, x + (cw - dw) / 2, y, { width: dw, height: dh });
   return y + dh;
 }
 
@@ -177,12 +234,27 @@ function drawContent(doc, theme, c, W, H, n, total, logo) {
     } else if (b.type === "list") {
       doc.font("body").fontSize(33);
       for (let i = 0; i < b.items.length; i++) {
-        doc.fillColor(theme.color.accent).text(b.ordered ? `${i + 1}.` : "—", m, y, { width: 40, lineBreak: false });
-        doc.fillColor(theme.color.foreground).text(b.items[i], m + 46, y, { width: cw - 46, lineGap: 4 });
+        // Task items carry their own ☑/☐ glyph, so skip the bullet/number marker.
+        if (!b.task) doc.fillColor(theme.color.accent).text(b.ordered ? `${i + 1}.` : "—", m, y, { width: 40, lineBreak: false });
+        const tx = b.task ? m : m + 46;
+        doc.fillColor(theme.color.foreground).text(b.items[i], tx, y, { width: cw - (tx - m), lineGap: 4 });
         y = doc.y + 12;
       }
     } else if (b.type === "image") {
       y = drawImage(doc, b.png, m, y + 8, cw, H * 0.5) + 20;
+    } else if (b.type === "quote") {
+      const textX = m + 20;
+      const startY = y + 4;
+      let qy = startY;
+      if (b.label) {
+        doc.font("heading").fontSize(28).fillColor(theme.color.accent);
+        doc.text(b.label, textX, qy, { width: cw - 20 });
+        qy = doc.y + 4;
+      }
+      doc.font("body").fontSize(30).fillColor(theme.color.foreground);
+      doc.text(b.text, textX, qy, { width: cw - 20, lineGap: 5 });
+      doc.rect(m, startY, 5, doc.y - startY).fill(theme.color.accent); // accent bar
+      y = doc.y + 18;
     }
   }
   drawIdentity(doc, theme, W, H, n, total, theme.color.muted, logo);
@@ -227,9 +299,10 @@ function pdfToBuffer(doc) {
   });
 }
 
-export async function buildCarousel(tokens, theme) {
+export async function buildCarousel(tokens, theme, baseDir = ".") {
   const [W, H] = pageSize(theme);
-  const pages = splitPages(tokens);
+  const { map: footnotes, tokens: body } = extractFootnotes(tokens);
+  const pages = splitPages(body);
   if (!pages.length) throw new Error("no content to render into a carousel");
 
   const fonts = await loadFonts(theme.font);
@@ -239,7 +312,7 @@ export async function buildCarousel(tokens, theme) {
     catch (e) { console.error(`  (logo skipped: ${e.message})`); }
   }
   const contents = [];
-  for (const p of pages) contents.push(await pageContent(p)); // renders embedded images
+  for (const p of pages) contents.push(await pageContent(p, baseDir, footnotes)); // renders embedded images
 
   const doc = new PDFDocument({ size: [W, H], margin: 0, autoFirstPage: false });
   registerFonts(doc, fonts);

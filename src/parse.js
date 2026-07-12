@@ -1,8 +1,44 @@
 // Markdown parsing + small token-stream helpers shared by both renderers.
 
 import MarkdownIt from "markdown-it";
+import footnote from "markdown-it-footnote";
 
-const md = new MarkdownIt({ html: false, linkify: true, breaks: false });
+// Inline/block math tokenizer. We only *tokenize* ($…$ / $$…$$ → math_inline
+// with a `meta.display` flag holding the raw TeX); the image is rendered
+// asynchronously elsewhere, because md.render is synchronous and the image
+// fetch is not. Best-effort dollar rules keep prose like "$5 and $10" from
+// being mistaken for math.
+function mathPlugin(md) {
+  md.inline.ruler.before("escape", "math", (state, silent) => {
+    const src = state.src;
+    const pos = state.pos;
+    if (src[pos] !== "$") return false;
+    const display = src[pos + 1] === "$";
+    const delim = display ? "$$" : "$";
+    const contentStart = pos + delim.length;
+    const closeIdx = src.indexOf(delim, contentStart);
+    if (closeIdx === -1) return false;
+    const content = src.slice(contentStart, closeIdx);
+    if (!content.trim()) return false;
+    if (!display) {
+      // inline guards: no padding whitespace, closing $ not glued to a digit ($5)
+      if (/^\s|\s$/.test(content)) return false;
+      if (/\d/.test(src[closeIdx + delim.length] || "")) return false;
+    }
+    if (!silent) {
+      const token = state.push("math_inline", "", 0);
+      token.content = content.trim();
+      token.markup = delim;
+      token.meta = { display };
+    }
+    state.pos = closeIdx + delim.length;
+    return true;
+  });
+}
+
+const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
+  .use(footnote)
+  .use(mathPlugin);
 
 export function parse(src) {
   return md.parse(src, {});
@@ -23,13 +59,30 @@ export function matchClose(tokens, openIdx) {
   return tokens.length - 1;
 }
 
-// Flatten an inline token's children to plain text (drops emphasis markup).
-export function inlineText(inlineToken) {
+// Flatten an inline token's children to plain text (drops markup). The
+// `footnotes` option maps footnote id → note text; a footnote_ref then inlines
+// "(note)". Strikethrough markers are ignored — the text passes through plain.
+export function inlineText(inlineToken, { footnotes = null } = {}) {
   if (!inlineToken || !inlineToken.children) return inlineToken?.content ?? "";
   let out = "";
   for (const c of inlineToken.children) {
-    if (c.type === "text" || c.type === "code_inline") out += c.content;
-    else if (c.type === "softbreak" || c.type === "hardbreak") out += " ";
+    switch (c.type) {
+      case "text":
+      case "code_inline":
+        out += c.content;
+        break;
+      case "softbreak":
+      case "hardbreak":
+        out += " ";
+        break;
+      case "footnote_ref": {
+        const note = footnotes && footnotes[c.meta?.id];
+        if (note) out += ` (${note})`;
+        break;
+      }
+      default:
+        break;
+    }
   }
   return out;
 }

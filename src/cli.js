@@ -17,12 +17,14 @@ import { rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from "node
 import { join, dirname } from "node:path";
 import { parse, extractTable } from "./parse.js";
 import { renderArticle, renderArticleFragment } from "./render-article.js";
-import { renderPlainText } from "./codeimg.js";
+import { renderPlainText, renderCode } from "./codeimg.js";
 import { renderMermaid } from "./mermaid.js";
+import { renderMath } from "./mathimg.js";
+import { resolveImage, toDataUri } from "./image.js";
 import { buildAscii, fitsWidth } from "./table.js";
 import { copyHtml } from "./clipboard.js";
 import { openUrl } from "./open.js";
-import { CODE, TABLE, DIAGRAM } from "./assets.js";
+import { CODE, TABLE, DIAGRAM, IMAGE, MATH } from "./assets.js";
 import { loadTheme } from "./config.js";
 import { buildCarousel } from "./carousel.js";
 import { fetchBrand, brandToTheme } from "./brand.js";
@@ -52,7 +54,7 @@ function parseArgs(argv) {
 //
 // Mermaid diagrams render via the Kroki service; on failure the source is kept
 // as a plain code block.
-async function buildAssets(tokens, counts, warnings) {
+async function buildAssets(tokens, counts, warnings, baseDir) {
   const dataUri = (png) => `data:image/png;base64,${png.toString("base64")}`;
 
   for (let i = 0; i < tokens.length; i++) {
@@ -86,6 +88,30 @@ async function buildAssets(tokens, counts, warnings) {
         t._asset = { kind: TABLE, ascii, fits: false, src: dataUri(renderPlainText(ascii)) };
       } else {
         t._asset = { kind: TABLE, ascii, fits: true }; // narrow: code block
+      }
+    }
+
+    // Inline images and inline/block math live inside an `inline` token's
+    // children; resolve each to a base64 data-URI stashed on the child token.
+    if (t.type === "inline" && t.children) {
+      for (const c of t.children) {
+        if (c.type === "image") {
+          const src = c.attrGet("src");
+          try {
+            c._asset = { kind: IMAGE, altText: c.content || "image", src: toDataUri(await resolveImage(src, baseDir)) };
+            counts.embedded++;
+          } catch (e) {
+            warnings.push(`image failed to load (${src}: ${e.message}) — showing alt text`);
+          }
+        } else if (c.type === "math_inline") {
+          try {
+            c._asset = { kind: MATH, src: dataUri(await renderMath(c.content)) };
+          } catch (e) {
+            warnings.push(`math failed to render (${e.message}) — showing a code image`);
+            c._asset = { kind: MATH, src: dataUri((await renderCode(c.content, "latex")).png) };
+          }
+          counts.embedded++;
+        }
       }
     }
   }
@@ -156,7 +182,7 @@ async function main() {
   // no gallery), so it bypasses buildAssets and the article path entirely.
   if (mode === "carousel") {
     const theme = loadTheme(join(dirname(args.input), "md2linkedin.config.json"));
-    const { pdf, pages } = await buildCarousel(tokens, theme);
+    const { pdf, pages } = await buildCarousel(tokens, theme, dirname(args.input));
     ensureOut();
     const outPath = join(OUT, "carousel.pdf");
     writeFileSync(outPath, pdf);
@@ -167,7 +193,7 @@ async function main() {
 
   // buildAssets writes nothing to disk: article images are base64-embedded in
   // the HTML, so the clipboard carries everything.
-  await buildAssets(tokens, counts, warnings);
+  await buildAssets(tokens, counts, warnings, dirname(args.input));
 
   // The clipboard is the primary deliverable. The html file is written only with
   // --save, or automatically if the clipboard copy fails (so output is never lost).

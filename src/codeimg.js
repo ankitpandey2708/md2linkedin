@@ -3,10 +3,10 @@
 // look identical on desktop and mobile. Used for article wide-table embeds and
 // for carousel (PDF) slide code/table images.
 
-import { Resvg } from "@resvg/resvg-js";
 import { codeToTokens } from "shiki";
 import { escapeMarkup } from "./escape.js";
 import { displayWidth } from "./unicode.js";
+import { svgToPng } from "./raster.js";
 
 const FONT_SIZE = 32;
 const LINE_HEIGHT = Math.round(FONT_SIZE * 1.5);
@@ -16,7 +16,6 @@ const PAD = 0;
 const BG = "#ffffff";
 const FG = "#1f2328";
 const FONT = "Consolas, 'DejaVu Sans Mono', monospace";
-const ZOOM = 2; // retina
 
 // Sizing the canvas by code-point count alone would undercount wide glyphs
 // (CJK, fullwidth, most emoji) and clip the right edge, so we measure display
@@ -47,16 +46,6 @@ function svgFromLines(lines) {
 <rect width="100%" height="100%" rx="14" fill="${BG}"/>
 ${textEls}
 </svg>`;
-}
-
-// Returns the rendered PNG as a Buffer; callers base64-embed it in the article
-// HTML or place it on a carousel slide as they need.
-function svgToPng(svg, zoom = ZOOM) {
-  const resvg = new Resvg(svg, {
-    fitTo: { mode: "zoom", value: zoom },
-    font: { loadSystemFonts: true, defaultFontFamily: "Consolas" },
-  });
-  return resvg.render().asPng();
 }
 
 // Render a fenced code block to a syntax-highlighted PNG.

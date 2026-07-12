@@ -1,6 +1,6 @@
 {
   "name": "md2linkedin",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Convert Markdown to LinkedIn-ready output — an article or a themeable carousel (PDF) — with the hard parts solved: aligned tables, syntax-highlighted code, and rendered mermaid diagrams.",
   "type": "module",
   "bin": {
@@ -50,6 +50,7 @@
     "@crosscopy/clipboard": "^0.3.6",
     "@resvg/resvg-js": "^2.6.2",
     "markdown-it": "^14.1.0",
+    "markdown-it-footnote": "^4.0.0",
     "pdfkit": "^0.19.1",
     "shiki": "^1.24.0"
   }

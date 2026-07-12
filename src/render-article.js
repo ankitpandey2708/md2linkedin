@@ -2,10 +2,29 @@
 // keeps native prose (h1/h2, strong, em, ul/ol, blockquote, a) and monospace
 // code blocks on paste. Code and narrow tables become code blocks (selectable,
 // aligned); wide tables would wrap in a code block, so they become inline images.
+// Task lists, alerts and footnotes map onto native HTML; images and math ride in
+// as base64-embedded <img> (assets built in cli.buildAssets).
+// (Strikethrough is intentionally unsupported: LinkedIn strips <s>, and the
+//  Unicode-overlay fallback renders like an underline, so it's left as plain text.)
 
 import { matchClose } from "./parse.js";
 import { escapeMarkup as esc } from "./escape.js";
 import { DIAGRAM } from "./assets.js";
+
+// GitHub alert types → the labeled heading we render inside the blockquote.
+const ALERT_LABELS = {
+  NOTE: "📌 NOTE",
+  TIP: "💡 TIP",
+  IMPORTANT: "❗ IMPORTANT",
+  WARNING: "⚠️ WARNING",
+  CAUTION: "🔴 CAUTION",
+};
+
+// LinkedIn keeps an <img> only when it is alone in its own <p>; an image that
+// shares a paragraph with text or another image is dropped on paste. So each
+// image/math breaks out of the current paragraph into its own <p><img></p>.
+// (Empty paragraphs from the split are stripped by the paragraph handler.)
+const imgBlock = (src, alt) => `</p><p><img src="${src}" alt="${esc(alt || "")}" style="max-width:100%"/></p><p>`;
 
 function renderInline(inlineToken) {
   if (!inlineToken?.children) return esc(inlineToken?.content ?? "");
@@ -42,6 +61,17 @@ function renderInline(inlineToken) {
       case "hardbreak":
         out += "<br/>";
         break;
+      case "image":
+        if (c._asset?.src) out += imgBlock(c._asset.src, c._asset.altText);
+        else out += esc(c.content || ""); // load failed → fall back to alt text
+        break;
+      case "math_inline":
+        if (c._asset?.src) out += imgBlock(c._asset.src, c.content);
+        else out += `<code>${esc(c.content)}</code>`;
+        break;
+      case "footnote_ref":
+        out += `<sup>[${(c.meta?.id ?? 0) + 1}]</sup>`;
+        break;
       default:
         if (c.content) out += esc(c.content);
     }
@@ -64,7 +94,10 @@ function renderBlocks(tokens, start, end) {
       }
       case "paragraph_open": {
         const close = matchClose(tokens, i);
-        html.push(`<p>${renderInline(tokens[i + 1])}</p>`);
+        // renderInline may inject `</p>…<p>` to promote images/math to their own
+        // paragraph; strip any empty paragraphs that leaves behind.
+        const p = `<p>${renderInline(tokens[i + 1])}</p>`.replace(/<p>\s*<\/p>/g, "");
+        if (p) html.push(p);
         i = close + 1;
         break;
       }
@@ -82,7 +115,11 @@ function renderBlocks(tokens, start, end) {
       }
       case "blockquote_open": {
         const close = matchClose(tokens, i);
-        html.push(`<blockquote>${renderBlocks(tokens, i + 1, close).join("")}</blockquote>`);
+        let inner = renderBlocks(tokens, i + 1, close).join("");
+        // GitHub alert: a blockquote whose first line is [!NOTE] / [!WARNING] …
+        const am = inner.match(/^<p>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i);
+        if (am) inner = inner.replace(am[0], `<p><strong>${ALERT_LABELS[am[1].toUpperCase()]}</strong> `);
+        html.push(`<blockquote>${inner}</blockquote>`);
         i = close + 1;
         break;
       }
@@ -120,6 +157,23 @@ function renderBlocks(tokens, start, end) {
         i = close + 1;
         break;
       }
+      case "footnote_block_open": {
+        // markdown-it-footnote collects all definitions here; render them as a
+        // trailing "Notes" list (LinkedIn keeps no real footnote anchors).
+        const close = matchClose(tokens, i);
+        const items = [];
+        for (let j = i + 1; j < close; j++) {
+          if (tokens[j].type === "footnote_open") {
+            const fc = matchClose(tokens, j);
+            const body = renderBlocks(tokens, j + 1, fc).join("").replace(/^<p>|<\/p>$/g, "");
+            items.push(`<li>${body}</li>`);
+            j = fc;
+          }
+        }
+        if (items.length) html.push(`<hr/><p><strong>Notes</strong></p><ol>${items.join("")}</ol>`);
+        i = close + 1;
+        break;
+      }
       default:
         i++;
     }
@@ -133,10 +187,14 @@ function renderListItems(tokens, start, end) {
   while (i < end) {
     if (tokens[i].type === "list_item_open") {
       const close = matchClose(tokens, i);
-      const inner = renderBlocks(tokens, i + 1, close)
+      let inner = renderBlocks(tokens, i + 1, close)
         .join("")
         .replace(/^<p>|<\/p>$/g, ""); // unwrap single paragraph inside <li>
-      out += `<li>${inner}</li>`;
+      // GFM task list: leading [ ] / [x] becomes a checkbox glyph.
+      const m = inner.match(/^\[( |x|X)\]\s+/);
+      const prefix = m ? (m[1] === " " ? "☐ " : "☑ ") : "";
+      if (m) inner = inner.slice(m[0].length);
+      out += `<li>${prefix}${inner}</li>`;
       i = close + 1;
     } else i++;
   }

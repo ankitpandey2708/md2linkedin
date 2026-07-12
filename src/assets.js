@@ -14,3 +14,5 @@
 export const CODE = "code";
 export const TABLE = "table";
 export const DIAGRAM = "diagram"; // ```mermaid → rendered diagram image
+export const IMAGE = "image"; // ![alt](src) → fetched + embedded image
+export const MATH = "math"; // $tex$ / $$tex$$ → rendered math image
